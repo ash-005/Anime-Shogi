@@ -48,7 +48,7 @@ def ask_gemini(prompt):
 
 
 # --- Streamlit Sidebar Navigation ---
-st.set_page_config(page_title="Anime & Gemini AI App", page_icon="", layout="centered")
+st.set_page_config(page_title="Anime Shogi", page_icon="🍥", layout="centered")
 
 st.markdown("""
     <style>
@@ -67,10 +67,10 @@ st.markdown("""
 
 
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Recommendation System", "Discuss Anime with Gemini"])
+page = st.sidebar.radio("Go to", ["Recommendation System", "Genre Impact Study", "Discuss Anime with Gemini"])
 
 if page == "Recommendation System":
-    st.title("Anime Recommendation System")
+    st.title("Home to your anime needs 🍥")
     st.markdown("""
     Enter an anime title to get recommendations based on content similarity. If the anime is not found, Gemini will try to help!
     """)
@@ -86,6 +86,142 @@ if page == "Recommendation System":
             gemini_prompt = f"Recommend some anime similar to '{anime_title}'."
             gemini_response = ask_gemini(gemini_prompt)
             st.write(gemini_response)
+
+elif page == "Genre Impact Study":
+    import plotly.express as px
+    import plotly.graph_objects as go
+    import ast
+    st.title("Genre Impact Study")
+    st.markdown("""
+    Explore how different genres affect anime scores, popularity, and more. Use the filters below to customize your analysis.
+    """)
+    genre_data_file = st.selectbox("Select dataset", [
+        "data/anime_airing_1000_preprocessed.csv",
+        "data/anime_alltime_preprocessed.csv",
+        "data/anime_nonairing_1000_preprocessed.csv"
+    ], format_func=lambda x: x.split("/")[-1])
+    df = pd.read_csv(genre_data_file)
+    df["genres"] = df["genres"].fillna("[]").apply(ast.literal_eval)
+    df_exploded = df.explode("genres")
+
+    min_score = st.slider("Minimum Mean Score", float(df["mean"].min()), float(df["mean"].max()), 6.0, 0.1)
+    min_popularity = st.slider("Minimum Popularity", float(df["popularity"].min()), float(df["popularity"].max()), float(df["popularity"].min()), 1.0)
+    media_types = ["All"] + sorted(df["media_type"].dropna().unique().tolist())
+    media_type = st.selectbox("Media Type", media_types)
+    statuses = ["All"] + sorted(df["status"].dropna().unique().tolist())
+    status = st.selectbox("Status", statuses)
+
+    def filter_df(df, min_score=None, min_popularity=None, media_type=None, status=None):
+        dff = df.copy()
+        if min_score is not None:
+            dff = dff[dff["mean"] >= min_score]
+        if min_popularity is not None:
+            dff = dff[dff["popularity"] >= min_popularity]
+        if media_type and media_type != "All":
+            dff = dff[dff["media_type"] == media_type]
+        if status and status != "All":
+            dff = dff[dff["status"] == status]
+        return dff
+
+    dff = filter_df(df_exploded, min_score, min_popularity, media_type, status)
+
+    def genre_metrics(dff):
+        return dff.groupby("genres").agg(
+            avg_score=("mean", "mean"),
+            median_score=("mean", "median"),
+            min_score=("mean", "min"),
+            max_score=("mean", "max"),
+            std_score=("mean", "std"),
+            avg_popularity=("popularity", "mean"),
+            median_popularity=("popularity", "median"),
+            min_popularity=("popularity", "min"),
+            max_popularity=("popularity", "max"),
+            std_popularity=("popularity", "std"),
+            count=("title", "count"),
+            avg_users=("num_list_users", "mean"),
+            median_users=("num_list_users", "median"),
+            min_users=("num_list_users", "min"),
+            max_users=("num_list_users", "max"),
+            std_users=("num_list_users", "std"),
+            avg_rank=("rank", "mean"),
+            median_rank=("rank", "median"),
+            min_rank=("rank", "min"),
+            max_rank=("rank", "max"),
+            std_rank=("rank", "std"),
+        ).reset_index()
+
+    metrics = genre_metrics(dff)
+
+    # --- Metric Selectors ---
+    st.markdown("#### Select Metrics to Visualize")
+    metric_options = {
+        "Score": ["avg_score", "median_score", "min_score", "max_score", "std_score"],
+        "Popularity": ["avg_popularity", "median_popularity", "min_popularity", "max_popularity", "std_popularity"],
+        "Users": ["avg_users", "median_users", "min_users", "max_users", "std_users"],
+        "Rank": ["avg_rank", "median_rank", "min_rank", "max_rank", "std_rank"]
+    }
+    metric_labels = {
+        "avg_score": "Average Score",
+        "median_score": "Median Score",
+        "min_score": "Min Score",
+        "max_score": "Max Score",
+        "std_score": "Score StdDev",
+        "avg_popularity": "Average Popularity",
+        "median_popularity": "Median Popularity",
+        "min_popularity": "Min Popularity",
+        "max_popularity": "Max Popularity",
+        "std_popularity": "Popularity StdDev",
+        "avg_users": "Average Users",
+        "median_users": "Median Users",
+        "min_users": "Min Users",
+        "max_users": "Max Users",
+        "std_users": "Users StdDev",
+        "avg_rank": "Average Rank",
+        "median_rank": "Median Rank",
+        "min_rank": "Min Rank",
+        "max_rank": "Max Rank",
+        "std_rank": "Rank StdDev"
+    }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        bar_metric_group = st.selectbox("Bar Chart Metric Group", list(metric_options.keys()), index=0)
+        bar_metric = st.selectbox("Bar Chart Metric", metric_options[bar_metric_group], format_func=lambda x: metric_labels[x], index=0)
+    with col2:
+        scatter_x_group = st.selectbox("Scatter X Metric Group", list(metric_options.keys()), index=0)
+        scatter_x_metric = st.selectbox("Scatter X Metric", metric_options[scatter_x_group], format_func=lambda x: metric_labels[x], index=0)
+        scatter_y_group = st.selectbox("Scatter Y Metric Group", list(metric_options.keys()), index=1)
+        scatter_y_metric = st.selectbox("Scatter Y Metric", metric_options[scatter_y_group], format_func=lambda x: metric_labels[x], index=0)
+
+    # --- Bar Chart ---
+    st.markdown(f"#### {metric_labels[bar_metric]} by Genre")
+    fig1 = px.bar(
+        metrics.sort_values(bar_metric, ascending=False),
+        x="genres", y=bar_metric, color=bar_metric,
+        color_continuous_scale="Viridis",
+        labels={"genres": "Genre", bar_metric: metric_labels[bar_metric]},
+        title=f"{metric_labels[bar_metric]} by Genre"
+    )
+    fig1.update_layout(xaxis_tickangle=-45)
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # --- Scatter Chart ---
+    st.markdown(f"#### {metric_labels[scatter_y_metric]} vs {metric_labels[scatter_x_metric]} by Genre")
+    fig2 = px.scatter(
+        metrics, x=scatter_x_metric, y=scatter_y_metric, size="count", color="genres",
+        hover_name="genres", title=f"{metric_labels[scatter_y_metric]} vs {metric_labels[scatter_x_metric]} by Genre"
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # --- Download Option ---
+    st.markdown("#### Download Genre Metrics")
+    csv = metrics.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download genre metrics as CSV",
+        data=csv,
+        file_name="genre_metrics.csv",
+        mime="text/csv"
+    )
 
 elif page == "Discuss Anime with Gemini":
     st.title(" Discuss Anime with Gemini AI")
